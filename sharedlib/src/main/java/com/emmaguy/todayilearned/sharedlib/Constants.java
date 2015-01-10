@@ -38,5 +38,5 @@ public class Constants {
     public static final String KEY_CONFIRMATION_ANIMATION = "key_confirm_animation";
     public static final String KEY_DISMISS_AFTER_ACTION = "open_on_phone_dismisses";
     public static final String KEY_NOTIFICATION_ID = "notification_id";
-    public static final String KEY_COMMENTS = "comments";
+    public static final String KEY_HIGHRES_IMAGE_ID = "highres_image";
 }

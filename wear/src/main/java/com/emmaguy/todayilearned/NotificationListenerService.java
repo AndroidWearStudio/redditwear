@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.wearable.activity.ConfirmationActivity;
 import android.text.TextUtils;
+import android.util.LruCache;
 import android.widget.Toast;
 
 import com.emmaguy.todayilearned.comments.ActionReceiver;
@@ -39,6 +40,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static android.app.Notification.Action.Builder;
+
 public class NotificationListenerService extends WearableListenerService {
     private static final String GROUP_KEY_SUBREDDIT_POSTS = "group_key_subreddit_posts";
     private static final String EXTRA_VOICE_REPLY = "extra_voice_reply";
@@ -52,6 +55,7 @@ public class NotificationListenerService extends WearableListenerService {
     private static final int REQUEST_CODE_SAVE_TO_POCKET = 3;
     private static final int REQUEST_CODE_REPLY = 4;
     private static final int REQUEST_VIEW_COMMENTS = 5;
+    private static final int REQUEST_VIEW_FULLSCREEN_IMAGE = 6;
 
     private static final int NOTIFICATION_ID_INCREMENT = 10;
     private static int sNotificationId = 0;
@@ -59,6 +63,7 @@ public class NotificationListenerService extends WearableListenerService {
     private GoogleApiClient mGoogleApiClient;
     private Handler mHandler;
     private final Gson mGson = new Gson();
+    public static LruCache<String, Bitmap> mBitmaps = new LruCache<String, Bitmap>(3);
 
     @Override
     public void onCreate() {
@@ -157,9 +162,9 @@ public class NotificationListenerService extends WearableListenerService {
 
                         Bitmap backgroundBitmap = null;
                         if (post.hasThumbnail()) {
-                            Asset a = dataMap.getAsset(post.getId());
-                            if (a != null) {
-                                backgroundBitmap = loadBitmapFromAsset(a);
+                            Asset backgroundAsset = dataMap.getAsset(post.getId());
+                            if (backgroundAsset != null) {
+                                backgroundBitmap = loadBitmapFromAsset(backgroundAsset);
                             }
                         }
 
@@ -181,35 +186,39 @@ public class NotificationListenerService extends WearableListenerService {
                             // if it's not got an image we can group it with the other text based ones
                             builder.setGroup(GROUP_KEY_SUBREDDIT_POSTS);
 
-                            // and set a themeBlueBitmap on it
+                            // and set backgroundAsset themeBlueBitmap on it
                             Notification.WearableExtender extender = new Notification.WearableExtender();
                             extender.setBackground(themeBlueBitmap);
                             builder.extend(extender);
                         }
 
-                        builder.addAction(new Notification.Action.Builder(R.drawable.ic_message_white_48dp,
+                        builder.addAction(new Builder(R.drawable.ic_message_white_48dp,
                                 getString(R.string.view_comments),
                                 getViewCommentsPendingIntent(post, notificationId)).build());
 
-                        if(post.hasHighResImage()) {
+                        if (post.hasHighResImage() && backgroundBitmap != null) {
+                            mBitmaps.put(post.getId(), backgroundBitmap);
 
+                            builder.addAction(new Builder(R.drawable.ic_launcher,
+                                    getString(R.string.view_full_image),
+                                    getViewFullScreenImagePendingIntent(post, notificationId)).build());
                         }
 
                         if (isLoggedIn) {
-                            builder.addAction(new Notification.Action.Builder(R.drawable.ic_reply_white_48dp, getString(R.string.reply_to_x, post.getShortTitle()), getReplyPendingIntent(post, notificationId))
+                            builder.addAction(new Builder(R.drawable.ic_reply_white_48dp, getString(R.string.reply_to_x, post.getShortTitle()), getReplyPendingIntent(post, notificationId))
                                     .addRemoteInput(new RemoteInput.Builder(EXTRA_VOICE_REPLY).build())
                                     .build());
-                            builder.addAction(new Notification.Action.Builder(R.drawable.ic_upvote_white_48dp, getString(R.string.upvote_x, post.getShortTitle()), getVotePendingIntent(post, 1, REQUEST_CODE_VOTE_UP + notificationId)).build());
-                            builder.addAction(new Notification.Action.Builder(R.drawable.ic_downvote_white_48dp, getString(R.string.downvote_x, post.getShortTitle()), getVotePendingIntent(post, -1, REQUEST_CODE_VOTE_DOWN + notificationId)).build());
+                            builder.addAction(new Builder(R.drawable.ic_upvote_white_48dp, getString(R.string.upvote_x, post.getShortTitle()), getVotePendingIntent(post, 1, REQUEST_CODE_VOTE_UP + notificationId)).build());
+                            builder.addAction(new Builder(R.drawable.ic_downvote_white_48dp, getString(R.string.downvote_x, post.getShortTitle()), getVotePendingIntent(post, -1, REQUEST_CODE_VOTE_DOWN + notificationId)).build());
                         }
 
                         if (canSaveToPocket) {
-                            builder.addAction(new Notification.Action.Builder(R.drawable.ic_pocket,
+                            builder.addAction(new Builder(R.drawable.ic_pocket,
                                     getString(R.string.save_to_pocket),
                                     getSaveToPocketPendingIntent(post.getPermalink(), notificationId)).build());
                         }
 
-                        builder.addAction(new Notification.Action.Builder(R.drawable.go_to_phone_00156,
+                        builder.addAction(new Builder(R.drawable.go_to_phone_00156,
                                 getString(R.string.open_on_phone),
                                 getOpenOnPhonePendingIntent(post.getPermalink(), openOnPhoneDismisses, notificationId)).build());
 
@@ -323,5 +332,11 @@ public class NotificationListenerService extends WearableListenerService {
         intent.putExtra(Constants.KEY_CONFIRMATION_ANIMATION, ConfirmationActivity.SUCCESS_ANIMATION);
         intent.putExtra(Constants.KEY_POST_PERMALINK, post.getPermalink());
         return PendingIntent.getBroadcast(this, REQUEST_VIEW_COMMENTS + notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent getViewFullScreenImagePendingIntent(Post post, int notificationId) {
+        Intent intent = new Intent(this, ImageActivity.class);
+        intent.putExtra(Constants.KEY_HIGHRES_IMAGE_ID, post.getId());
+        return PendingIntent.getActivity(this, REQUEST_VIEW_FULLSCREEN_IMAGE + notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
     }
 }
